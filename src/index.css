@@ -1,0 +1,104 @@
+@import "tailwindcss";
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+@theme {
+  --color-lcs-primary: #8b5cf6;
+  --color-lcs-secondary: #ec4899;
+  --color-lcs-bg: #0f0f23;
+  --color-lcs-surface: #1a1a2e;
+  --color-lcs-border: #2d2d44;
+  --color-lcs-text: #e4e4f1;
+  --color-lcs-muted: #6b7280;
+  
+  --font-family-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-glow: glow 2s ease-in-out infinite alternate;
+  
+  @keyframes glow {
+    0% { box-shadow: 0 0 5px #8b5cf6, 0 0 10px #8b5cf6, 0 0 15px #8b5cf6; }
+    100% { box-shadow: 0 0 10px #ec4899, 0 0 20px #ec4899, 0 0 30px #ec4899; }
+  }
+}
+
+:root {
+  font-family: 'JetBrains Mono', system-ui, sans-serif;
+  line-height: 1.6;
+  font-weight: 400;
+  color-scheme: dark;
+  color: #e4e4f1;
+  background-color: #0f0f23;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1a2e;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #8b5cf6, #ec4899);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #a78bfa, #f472b6);
+}
+
+.glass-panel {
+  background-color: rgba(26, 26, 46, 0.8);
+  backdrop-filter: blur(24px);
+  border: 1px solid #2d2d44;
+  border-radius: 1rem;
+}
+
+.glow-border {
+  border: 1px solid rgba(139, 92, 246, 0.5);
+  box-shadow: 0 0 15px rgba(139, 92, 246, 0.3);
+}
+
+.message-bubble {
+  padding: 1rem;
+  border-radius: 1rem;
+  max-width: 85%;
+}
+
+.user-message {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(236, 72, 153, 0.2));
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  margin-left: auto;
+}
+
+.ai-message {
+  background-color: #1a1a2e;
+  border: 1px solid #2d2d44;
+}
+
+.code-block {
+  background-color: rgba(0, 0, 0, 0.4);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  font-family: monospace;
+  font-size: 0.875rem;
+  overflow-x: auto;
+  border: 1px solid #2d2d44;
+}
