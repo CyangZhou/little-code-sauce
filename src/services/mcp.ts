@@ -193,6 +193,8 @@ const BUILTIN_MCP_SERVERS: MCPServerConfig[] = [
   },
 ];
 
+import { realFileService } from './realFileService';
+
 class MCPService {
   private connections: Map<string, MCPConnectionStatus> = new Map();
   private tools: Map<string, MCPTool[]> = new Map();
@@ -354,14 +356,65 @@ class MCPService {
 
     console.log(`Calling tool ${call.name} on ${serverName}`, call.arguments);
 
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Tool ${call.name} executed successfully on ${serverName}`,
-        },
-      ],
-    };
+    try {
+      // Implement real logic for filesystem
+      if (serverName === 'filesystem') {
+        const args = call.arguments as { path?: string; content?: string };
+        
+        if (call.name === 'read_file') {
+          if (!args.path) {
+            return { content: [{ type: 'text', text: 'Missing path for read_file' }], isError: true };
+          }
+          const content = realFileService.readFile(args.path);
+          if (content === null) throw new Error(`File not found: ${args.path}`);
+          return { content: [{ type: 'text', text: content }] };
+        }
+        
+        if (call.name === 'write_file') {
+          if (!args.path) {
+            return { content: [{ type: 'text', text: 'Missing path for write_file' }], isError: true };
+          }
+          if (args.content === undefined) {
+            return { content: [{ type: 'text', text: 'Missing content for write_file' }], isError: true };
+          }
+          realFileService.writeFile(args.path, args.content);
+          return { content: [{ type: 'text', text: `Successfully wrote to ${args.path}` }] };
+        }
+        
+        if (call.name === 'list_directory') {
+          // Simplification: list all files as we don't have true directory structure in realFileService yet
+          const files = realFileService.listFiles();
+          const fileList = files.map(f => f.path).join('\n');
+          return { content: [{ type: 'text', text: fileList }] };
+        }
+      }
+
+      // Implement real logic for fetch
+      if (serverName === 'fetch') {
+        if (call.name === 'fetch_url') {
+          const args = call.arguments as { url: string; method?: string };
+          const response = await fetch(args.url, { method: args.method || 'GET' });
+          const text = await response.text();
+          return { content: [{ type: 'text', text: text.slice(0, 10000) }] };
+        }
+      }
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Tool ${call.name} on ${serverName} is not supported in the browser environment yet.`,
+          },
+        ],
+        isError: true
+      };
+
+    } catch (e) {
+      return {
+        content: [{ type: 'text', text: `Error executing tool: ${e instanceof Error ? e.message : String(e)}` }],
+        isError: true,
+      };
+    }
   }
 
   async readResource(serverName: string, uri: string): Promise<MCPResource | null> {

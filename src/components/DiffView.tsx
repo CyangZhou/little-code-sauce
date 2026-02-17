@@ -16,7 +16,7 @@ interface DiffViewProps {
   contextLines?: number;
 }
 
-export function computeDiff(oldContent: string, newContent: string): DiffLine[] {
+function computeDiff(oldContent: string, newContent: string): DiffLine[] {
   const oldLines = oldContent.split('\n');
   const newLines = newContent.split('\n');
   const diff: DiffLine[] = [];

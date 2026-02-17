@@ -1,21 +1,40 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
 import type { OnMount } from '@monaco-editor/react';
-import { X, FileCode, Play, Copy, Download } from 'lucide-react';
+import type { editor as MonacoEditor } from 'monaco-editor';
+import { X, FileCode, Play, Copy, Download, Save } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { realFileService } from '../services/realFileService';
 
 interface CodeEditorProps {
   onExecute?: (code: string, language: string) => void;
 }
 
 export const CodeEditor: React.FC<CodeEditorProps> = ({ onExecute }) => {
-  const editorRef = useRef<any>(null);
+  const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const { editor, updateFileContent, closeFile, setActiveFile } = useAppStore();
 
   const handleEditorDidMount: OnMount = (editor) => {
     editorRef.current = editor;
     editor.focus();
   };
+
+  const loadFileContent = useCallback((filePath: string) => {
+    const content = realFileService.readFile(filePath);
+    if (content !== null && editorRef.current) {
+      const model = editorRef.current.getModel();
+      if (model) {
+        model.setValue(content);
+        updateFileContent(filePath, content);
+      }
+    }
+  }, [updateFileContent]);
+
+  useEffect(() => {
+    if (editor.activeFile) {
+      loadFileContent(editor.activeFile);
+    }
+  }, [editor.activeFile, loadFileContent]);
 
   useEffect(() => {
     if (editorRef.current && editor.activeFile) {
@@ -31,6 +50,13 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ onExecute }) => {
   const handleEditorChange = (value: string | undefined) => {
     if (value !== undefined && editor.activeFile) {
       updateFileContent(editor.activeFile, value);
+    }
+  };
+
+  const handleSave = () => {
+    if (editor.activeFile) {
+      const content = editor.fileContents[editor.activeFile] || '';
+      realFileService.writeFile(editor.activeFile, content);
     }
   };
 
@@ -69,14 +95,14 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ onExecute }) => {
     }
   };
 
-  const handleSave = () => {
+  const handleDownload = () => {
     if (editor.activeFile) {
       const content = editor.fileContents[editor.activeFile] || '';
       const blob = new Blob([content], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = editor.activeFile;
+      a.download = editor.activeFile.split('/').pop() || 'file';
       a.click();
       URL.revokeObjectURL(url);
     }
@@ -89,6 +115,11 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ onExecute }) => {
     }
   };
 
+  const handleCloseFile = (file: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    closeFile(file);
+  };
+
   if (!editor.activeFile) {
     return (
       <div className="h-full flex flex-col items-center justify-center bg-lcs-bg/50">
@@ -98,8 +129,13 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ onExecute }) => {
           <p className="text-lcs-muted max-w-sm">
             在聊天中生成代码后，点击"在编辑器中打开"按钮，
             <br />
-            或者创建新文件开始编写。
+            或者在文件浏览器中点击文件开始编辑。
           </p>
+          {!realFileService.hasWorkspace() && (
+            <p className="text-lcs-primary text-sm mt-4">
+              💡 请先创建或打开一个项目
+            </p>
+          )}
         </div>
       </div>
     );
@@ -108,7 +144,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ onExecute }) => {
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between px-4 py-2 border-b border-lcs-border bg-lcs-surface/50">
-        <div className="flex items-center gap-2 overflow-x-auto">
+        <div className="flex items-center gap-2 overflow-x-auto flex-1">
           {editor.openFiles.map((file) => (
             <button
               key={file}
@@ -120,12 +156,9 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ onExecute }) => {
               }`}
             >
               <FileCode className="w-3 h-3" />
-              {file}
+              <span className="max-w-[120px] truncate">{file.split('/').pop()}</span>
               <span
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeFile(file);
-                }}
+                onClick={(e) => handleCloseFile(file, e)}
                 className="ml-1 hover:bg-white/10 rounded p-0.5"
               >
                 <X className="w-3 h-3" />
@@ -143,6 +176,13 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ onExecute }) => {
           </button>
           <button
             onClick={handleSave}
+            className="p-2 hover:bg-lcs-surface rounded-lg text-lcs-muted hover:text-lcs-text transition-colors"
+            title="保存文件"
+          >
+            <Save className="w-4 h-4" />
+          </button>
+          <button
+            onClick={handleDownload}
             className="p-2 hover:bg-lcs-surface rounded-lg text-lcs-muted hover:text-lcs-text transition-colors"
             title="下载文件"
           >
@@ -190,6 +230,11 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ onExecute }) => {
             formatOnType: true,
           }}
         />
+      </div>
+
+      <div className="px-4 py-1 border-t border-lcs-border bg-lcs-surface/30 text-xs text-lcs-muted flex items-center justify-between">
+        <span>{editor.activeFile}</span>
+        <span>{getLanguage(editor.activeFile)}</span>
       </div>
     </div>
   );

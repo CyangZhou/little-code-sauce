@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   X, Key, Globe, Save, Check, Eye, EyeOff, AlertCircle, CheckCircle,
   User, FolderKanban, Puzzle, Server, Plus, Trash2, Search,
-  Download, Copy, Sparkles, Shield, RotateCcw, Zap, TrendingUp, Calendar
+  Download, Copy, Sparkles, Shield, RotateCcw, Zap, TrendingUp, Calendar, Rocket
 } from 'lucide-react';
 import { llmService } from '../services/llm';
 import type { LLMConfig } from '../services/llm';
@@ -21,24 +21,25 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type SettingsTab = 'llm' | 'soul' | 'rules' | 'mcp' | 'skills' | 'projects' | 'permissions' | 'tokens';
+type SettingsTab = 'quick' | 'llm' | 'soul' | 'rules' | 'mcp' | 'skills' | 'projects' | 'permissions' | 'tokens';
 
 const API_PROVIDERS = [
-  { id: 'deepseek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', models: ['deepseek-chat', 'deepseek-coder'] },
-  { id: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', models: ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'] },
-  { id: 'anthropic', name: 'Anthropic', baseUrl: 'https://api.anthropic.com/v1', models: ['claude-3-opus', 'claude-3-sonnet', 'claude-3-haiku'] },
-  { id: 'local', name: '本地模型 (Ollama)', baseUrl: 'http://localhost:11434/v1', models: ['llama3', 'mistral', 'codellama'] },
-  { id: 'custom', name: '自定义', baseUrl: '', models: [] },
+  { id: 'deepseek', name: 'DeepSeek (推荐)', baseUrl: 'https://api.deepseek.com', models: ['deepseek-chat', 'deepseek-coder'], description: '性价比最高，中文支持优秀' },
+  { id: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', models: ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'], description: 'GPT-4系列，功能强大' },
+  { id: 'anthropic', name: 'Anthropic', baseUrl: 'https://api.anthropic.com/v1', models: ['claude-3-opus', 'claude-3-sonnet', 'claude-3-haiku'], description: 'Claude系列，擅长长文本' },
+  { id: 'local', name: '本地模型 (Ollama)', baseUrl: 'http://localhost:11434/v1', models: ['llama3', 'mistral', 'codellama'], description: '完全本地运行，隐私安全' },
+  { id: 'custom', name: '自定义', baseUrl: '', models: [], description: '配置自定义API' },
 ];
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose }) => {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('llm');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('quick');
   
   const [llmConfig, setLlmConfig] = useState<LLMConfig>({
     provider: 'deepseek',
     apiKey: '',
-    baseUrl: 'https://api.deepseek.com/v1',
+    baseUrl: 'https://api.deepseek.com',
     model: 'deepseek-chat',
+    enableTools: true,
   });
   const [showApiKey, setShowApiKey] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -74,17 +75,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
   const [tokenSummary, setTokenSummary] = useState<TokenUsageSummary | null>(null);
   const [tokenDays, setTokenDays] = useState(7);
 
-  useEffect(() => {
-    if (isOpen) {
-      loadAllConfigs();
-    }
-  }, [isOpen]);
-
-  const loadAllConfigs = () => {
+  const loadAllConfigs = useCallback(() => {
     const savedLlmConfig = localStorage.getItem('lcs-llm-config');
     if (savedLlmConfig) {
       try {
-        setLlmConfig(JSON.parse(savedLlmConfig));
+        const parsed = JSON.parse(savedLlmConfig);
+        setLlmConfig(prev => ({ ...prev, ...parsed }));
       } catch (e) {
         console.error('Failed to parse LLM config:', e);
       }
@@ -103,7 +99,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
     setTools(permissionService.getTools());
     setPermissions(permissionService.getAllPermissions());
     setTokenSummary(tokenTrackerService.getSummary(tokenDays));
-  };
+  }, [tokenDays]);
+
+  useEffect(() => {
+    if (isOpen) {
+      loadAllConfigs();
+    }
+  }, [isOpen, loadAllConfigs]);
 
   const handleSaveLlm = () => {
     localStorage.setItem('lcs-llm-config', JSON.stringify(llmConfig));
@@ -238,6 +240,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
   if (!isOpen) return null;
 
   const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
+    { id: 'quick', label: '快速设置', icon: <Rocket className="w-4 h-4" /> },
     { id: 'llm', label: 'API配置', icon: <Key className="w-4 h-4" /> },
     { id: 'soul', label: '灵魂核心', icon: <Sparkles className="w-4 h-4" /> },
     { id: 'rules', label: '规则管理', icon: <User className="w-4 h-4" /> },
@@ -291,6 +294,131 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
           </div>
 
           <div className="flex-1 overflow-y-auto p-4">
+            {activeTab === 'quick' && (
+              <div className="space-y-6">
+                <div className="text-center mb-6">
+                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-lcs-primary to-lcs-secondary flex items-center justify-center mx-auto mb-4">
+                    <Rocket className="w-8 h-8 text-white" />
+                  </div>
+                  <h3 className="text-xl font-bold text-lcs-text mb-2">快速开始</h3>
+                  <p className="text-lcs-muted">只需一步，即可开始使用小码酱</p>
+                </div>
+
+                <div className="p-6 bg-lcs-surface rounded-lg border border-lcs-border">
+                  <h4 className="font-medium text-lcs-text mb-4 flex items-center gap-2">
+                    <Key className="w-5 h-5 text-lcs-primary" />
+                    配置 API 密钥
+                  </h4>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm text-lcs-muted mb-2">选择 API 提供商</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {API_PROVIDERS.slice(0, 4).map(provider => (
+                          <button
+                            key={provider.id}
+                            onClick={() => {
+                              setLlmConfig(prev => ({
+                                ...prev,
+                                provider: provider.id as LLMConfig['provider'],
+                                baseUrl: provider.baseUrl,
+                                model: provider.models[0],
+                              }));
+                            }}
+                            className={`p-3 rounded-lg border text-left transition-colors ${
+                              llmConfig.provider === provider.id
+                                ? 'border-lcs-primary bg-lcs-primary/10'
+                                : 'border-lcs-border hover:border-lcs-primary/50'
+                            }`}
+                          >
+                            <div className="font-medium text-lcs-text text-sm">{provider.name}</div>
+                            <div className="text-xs text-lcs-muted mt-1">{provider.description}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm text-lcs-muted mb-2">API 密钥</label>
+                      <div className="relative">
+                        <input
+                          type={showApiKey ? 'text' : 'password'}
+                          value={llmConfig.apiKey || ''}
+                          onChange={(e) => setLlmConfig(prev => ({ ...prev, apiKey: e.target.value }))}
+                          placeholder="sk-..."
+                          className="w-full bg-lcs-bg border border-lcs-border rounded-lg px-4 py-3 pr-10 text-lcs-text focus:outline-none focus:border-lcs-primary"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowApiKey(!showApiKey)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-lcs-muted hover:text-lcs-text"
+                        >
+                          {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      <div className="text-xs text-lcs-muted mt-2">
+                        {llmConfig.provider === 'deepseek' && (
+                          <span>💡 获取密钥: <a href="https://platform.deepseek.com" target="_blank" rel="noopener noreferrer" className="text-lcs-primary hover:underline">platform.deepseek.com</a></span>
+                        )}
+                        {llmConfig.provider === 'openai' && (
+                          <span>💡 获取密钥: <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-lcs-primary hover:underline">platform.openai.com</a></span>
+                        )}
+                      </div>
+                    </div>
+
+                    {testResult && (
+                      <div className={`flex items-center gap-2 p-3 rounded-lg ${
+                        testResult === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                      }`}>
+                        {testResult === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+                        {testResult === 'success' ? '连接成功！' : '连接失败，请检查密钥'}
+                      </div>
+                    )}
+
+                    <div className="flex gap-3">
+                      <button 
+                        onClick={handleTestLlm} 
+                        disabled={testing || !llmConfig.apiKey}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-lcs-surface border border-lcs-border rounded-lg text-lcs-text hover:bg-lcs-primary/20 disabled:opacity-50 transition-colors"
+                      >
+                        {testing ? '测试中...' : '测试连接'}
+                      </button>
+                      <button 
+                        onClick={handleSaveLlm}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-lcs-primary to-lcs-secondary rounded-lg text-white hover:opacity-90 transition-opacity"
+                      >
+                        {saved ? <><Check className="w-4 h-4" /> 已保存</> : <><Save className="w-4 h-4" /> 保存并开始</>}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                  <div className="text-sm text-blue-200">
+                    <strong>推荐配置：</strong>DeepSeek 性价比最高，每百万Token仅需约1元，中文支持优秀，代码能力强。
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="p-4 bg-lcs-surface rounded-lg border border-lcs-border text-center">
+                    <Zap className="w-6 h-6 text-lcs-primary mx-auto mb-2" />
+                    <div className="text-sm font-medium text-lcs-text">一键执行</div>
+                    <div className="text-xs text-lcs-muted mt-1">输入「开始」触发自动模式</div>
+                  </div>
+                  <div className="p-4 bg-lcs-surface rounded-lg border border-lcs-border text-center">
+                    <Shield className="w-6 h-6 text-lcs-secondary mx-auto mb-2" />
+                    <div className="text-sm font-medium text-lcs-text">安全沙箱</div>
+                    <div className="text-xs text-lcs-muted mt-1">文件操作在沙箱中运行</div>
+                  </div>
+                  <div className="p-4 bg-lcs-surface rounded-lg border border-lcs-border text-center">
+                    <Sparkles className="w-6 h-6 text-yellow-400 mx-auto mb-2" />
+                    <div className="text-sm font-medium text-lcs-text">智能理解</div>
+                    <div className="text-xs text-lcs-muted mt-1">自然语言，无需学习命令</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {activeTab === 'llm' && (
               <div className="space-y-6">
                 <div>
@@ -358,6 +486,19 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                   />
                 </div>
 
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="enableTools"
+                    checked={llmConfig.enableTools !== false}
+                    onChange={(e) => setLlmConfig(prev => ({ ...prev, enableTools: e.target.checked }))}
+                    className="w-4 h-4 rounded border-lcs-border text-lcs-primary focus:ring-lcs-primary"
+                  />
+                  <label htmlFor="enableTools" className="text-sm text-lcs-text">
+                    启用工具调用 (Function Calling)
+                  </label>
+                </div>
+
                 {testResult && (
                   <div className={`flex items-center gap-2 p-3 rounded-lg ${
                     testResult === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
@@ -405,36 +546,44 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
               <div className="space-y-6">
                 <div className="space-y-3">
                   <h3 className="text-lg font-semibold text-lcs-text">个人规则</h3>
-                  {personalRules.map(rule => (
-                    <div key={rule.id} className="flex items-start gap-3 p-3 bg-lcs-surface rounded-lg border border-lcs-border">
-                      <input type="checkbox" checked={rule.enabled} onChange={() => handleToggleRule(rule.id)}
-                        className="mt-1 w-4 h-4 rounded border-lcs-border text-lcs-primary focus:ring-lcs-primary" />
-                      <div className="flex-1">
-                        <div className="font-medium text-lcs-text">{rule.name}</div>
-                        <div className="text-sm text-lcs-muted mt-1">{rule.content.slice(0, 100)}...</div>
+                  {personalRules.length === 0 ? (
+                    <div className="text-sm text-lcs-muted py-4 text-center">暂无个人规则</div>
+                  ) : (
+                    personalRules.map(rule => (
+                      <div key={rule.id} className="flex items-start gap-3 p-3 bg-lcs-surface rounded-lg border border-lcs-border">
+                        <input type="checkbox" checked={rule.enabled} onChange={() => handleToggleRule(rule.id)}
+                          className="mt-1 w-4 h-4 rounded border-lcs-border text-lcs-primary focus:ring-lcs-primary" />
+                        <div className="flex-1">
+                          <div className="font-medium text-lcs-text">{rule.name}</div>
+                          <div className="text-sm text-lcs-muted mt-1">{rule.content.slice(0, 100)}...</div>
+                        </div>
+                        <button onClick={() => handleDeleteRule(rule.id)} className="p-1 text-lcs-muted hover:text-red-400">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
-                      <button onClick={() => handleDeleteRule(rule.id)} className="p-1 text-lcs-muted hover:text-red-400">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
 
                 <div className="space-y-3">
                   <h3 className="text-lg font-semibold text-lcs-text">项目规则</h3>
-                  {projectRules.map(rule => (
-                    <div key={rule.id} className="flex items-start gap-3 p-3 bg-lcs-surface rounded-lg border border-lcs-border">
-                      <input type="checkbox" checked={rule.enabled} onChange={() => handleToggleRule(rule.id)}
-                        className="mt-1 w-4 h-4 rounded border-lcs-border text-lcs-primary focus:ring-lcs-primary" />
-                      <div className="flex-1">
-                        <div className="font-medium text-lcs-text">{rule.name}</div>
-                        <div className="text-sm text-lcs-muted mt-1">{rule.content.slice(0, 100)}...</div>
+                  {projectRules.length === 0 ? (
+                    <div className="text-sm text-lcs-muted py-4 text-center">暂无项目规则</div>
+                  ) : (
+                    projectRules.map(rule => (
+                      <div key={rule.id} className="flex items-start gap-3 p-3 bg-lcs-surface rounded-lg border border-lcs-border">
+                        <input type="checkbox" checked={rule.enabled} onChange={() => handleToggleRule(rule.id)}
+                          className="mt-1 w-4 h-4 rounded border-lcs-border text-lcs-primary focus:ring-lcs-primary" />
+                        <div className="flex-1">
+                          <div className="font-medium text-lcs-text">{rule.name}</div>
+                          <div className="text-sm text-lcs-muted mt-1">{rule.content.slice(0, 100)}...</div>
+                        </div>
+                        <button onClick={() => handleDeleteRule(rule.id)} className="p-1 text-lcs-muted hover:text-red-400">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
-                      <button onClick={() => handleDeleteRule(rule.id)} className="p-1 text-lcs-muted hover:text-red-400">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
 
                 <div className="p-4 bg-lcs-surface rounded-lg border border-lcs-border space-y-3">
@@ -475,7 +624,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  {BUILTIN_MCP_SERVERS.map(builtin => (
+                  {BUILTIN_MCP_SERVERS.slice(0, 6).map(builtin => (
                     <button key={builtin.name} onClick={() => handleAddBuiltinMcp(builtin)}
                       className="p-3 bg-lcs-surface rounded-lg border border-lcs-border text-left hover:border-lcs-primary/50 transition-colors">
                       <div className="flex items-center gap-2">

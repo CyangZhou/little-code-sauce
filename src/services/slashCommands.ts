@@ -73,7 +73,8 @@ export const slashCommands: SlashCommand[] = [
     description: '显示或隐藏终端面板',
     usage: '/terminal',
     examples: ['/terminal', '/t'],
-    execute: async (_args: string, context: CommandContext) => {
+    execute: async (args: string, context: CommandContext) => {
+      void args;
       return {
         success: true,
         message: '🖥️ 终端面板已切换',
@@ -89,7 +90,8 @@ export const slashCommands: SlashCommand[] = [
     description: '显示帮助信息和可用命令',
     usage: '/help [命令名]',
     examples: ['/help', '/help open', '/h'],
-    execute: async (args: string, _context: CommandContext) => {
+    execute: async (args: string, context: CommandContext) => {
+      void context;
       if (args.trim()) {
         const cmd = slashCommands.find(
           c => c.name === args.trim() || c.alias?.includes(args.trim())
@@ -153,7 +155,8 @@ ${slashCommands.map(c => `  \`/${c.name}\` ${c.alias?.length ? `(${c.alias.map(a
     description: '查看或切换当前模型',
     usage: '/model [模型名]',
     examples: ['/model', '/model gpt-4', '/m deepseek-chat'],
-    execute: async (args: string, _context: CommandContext) => {
+    execute: async (args: string, context: CommandContext) => {
+      void context;
       if (!args.trim()) {
         return {
           success: true,
@@ -221,7 +224,8 @@ ${slashCommands.map(c => `  \`/${c.name}\` ${c.alias?.length ? `(${c.alias.map(a
     description: '文件操作命令',
     usage: '/file <read|write|list> [路径]',
     examples: ['/file read src/App.tsx', '/file list src/', '/f read package.json'],
-    execute: async (args: string, _context: CommandContext) => {
+    execute: async (args: string, context: CommandContext) => {
+      void context;
       const [action, ...pathParts] = args.trim().split(/\s+/);
       const path = pathParts.join(' ');
 
@@ -262,7 +266,8 @@ ${slashCommands.map(c => `  \`/${c.name}\` ${c.alias?.length ? `(${c.alias.map(a
     description: '在项目中搜索代码',
     usage: '/search <搜索词>',
     examples: ['/search useState', '/s function App', '/find import'],
-    execute: async (args: string, _context: CommandContext) => {
+    execute: async (args: string, context: CommandContext) => {
+      void context;
       if (!args.trim()) {
         return {
           success: false,
@@ -281,7 +286,8 @@ ${slashCommands.map(c => `  \`/${c.name}\` ${c.alias?.length ? `(${c.alias.map(a
     description: 'Git操作命令',
     usage: '/git <status|diff|commit|log>',
     examples: ['/git status', '/g log', '/git diff'],
-    execute: async (args: string, _context: CommandContext) => {
+    execute: async (args: string, context: CommandContext) => {
+      void context;
       const action = args.trim() || 'status';
       
       const gitHelp = `🌿 **Git命令**
@@ -307,7 +313,8 @@ ${slashCommands.map(c => `  \`/${c.name}\` ${c.alias?.length ? `(${c.alias.map(a
     description: '运行代码或脚本',
     usage: '/run <命令>',
     examples: ['/run npm start', '/r python main.py', '/exec make build'],
-    execute: async (args: string, _context: CommandContext) => {
+    execute: async (args: string, context: CommandContext) => {
+      void context;
       if (!args.trim()) {
         return {
           success: false,
@@ -326,7 +333,8 @@ ${slashCommands.map(c => `  \`/${c.name}\` ${c.alias?.length ? `(${c.alias.map(a
     description: '撤销最近的更改',
     usage: '/undo',
     examples: ['/undo', '/u'],
-    execute: async (_args: string, context: CommandContext) => {
+    execute: async (args: string, context: CommandContext) => {
+      void args;
       return {
         success: true,
         message: '↩️ 已撤销最近的更改',
@@ -342,7 +350,8 @@ ${slashCommands.map(c => `  \`/${c.name}\` ${c.alias?.length ? `(${c.alias.map(a
     description: '重做已撤销的更改',
     usage: '/redo',
     examples: ['/redo', '/re'],
-    execute: async (_args: string, context: CommandContext) => {
+    execute: async (args: string, context: CommandContext) => {
+      void args;
       return {
         success: true,
         message: '↪️ 已重做更改',
@@ -358,7 +367,8 @@ ${slashCommands.map(c => `  \`/${c.name}\` ${c.alias?.length ? `(${c.alias.map(a
     description: '分享当前对话',
     usage: '/share',
     examples: ['/share', '/sh'],
-    execute: async (_args: string, context: CommandContext) => {
+    execute: async (args: string, context: CommandContext) => {
+      void args;
       const shareUrl = context.share?.() || `https://lcs.dev/share/${Date.now()}`;
       return {
         success: true,
@@ -372,7 +382,9 @@ ${slashCommands.map(c => `  \`/${c.name}\` ${c.alias?.length ? `(${c.alias.map(a
     description: '初始化项目配置',
     usage: '/init',
     examples: ['/init', '/i'],
-    execute: async (_args: string, _context: CommandContext) => {
+    execute: async (args: string, context: CommandContext) => {
+      void args;
+      void context;
       return {
         success: true,
         message: `🚀 **项目初始化**
@@ -397,7 +409,8 @@ ${slashCommands.map(c => `  \`/${c.name}\` ${c.alias?.length ? `(${c.alias.map(a
     description: '连接API提供商',
     usage: '/connect [提供商]',
     examples: ['/connect', '/connect opencode', '/conn deepseek'],
-    execute: async (args: string, _context: CommandContext) => {
+    execute: async (args: string, context: CommandContext) => {
+      void context;
       const provider = args.trim() || 'opencode';
       return {
         success: true,
@@ -421,7 +434,8 @@ ${slashCommands.map(c => `  \`/${c.name}\` ${c.alias?.length ? `(${c.alias.map(a
     description: '查看代码变更差异',
     usage: '/diff [文件路径]',
     examples: ['/diff', '/diff src/App.tsx', '/d'],
-    execute: async (args: string, _context: CommandContext) => {
+    execute: async (args: string, context: CommandContext) => {
+      void context;
       const file = args.trim();
       return {
         success: true,

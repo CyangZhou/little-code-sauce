@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ChevronRight, 
   ChevronDown, 
@@ -12,8 +12,11 @@ import {
   FileText,
   Image,
   FileSpreadsheet,
+  Plus,
+  FolderPlus,
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { realFileService } from '../services/realFileService';
 
 interface FileNode {
   name: string;
@@ -41,71 +44,6 @@ const FILE_ICONS: Record<string, React.ReactNode> = {
   xlsx: <FileSpreadsheet className="w-4 h-4 text-green-500" />,
   csv: <FileSpreadsheet className="w-4 h-4 text-green-500" />,
 };
-
-const DEFAULT_PROJECT_FILES: FileNode[] = [
-  {
-    name: 'src',
-    path: 'src',
-    type: 'folder',
-    children: [
-      {
-        name: 'components',
-        path: 'src/components',
-        type: 'folder',
-        children: [
-          { name: 'App.tsx', path: 'src/components/App.tsx', type: 'file', ext: 'tsx' },
-          { name: 'ChatPanel.tsx', path: 'src/components/ChatPanel.tsx', type: 'file', ext: 'tsx' },
-          { name: 'CodeEditor.tsx', path: 'src/components/CodeEditor.tsx', type: 'file', ext: 'tsx' },
-          { name: 'Sidebar.tsx', path: 'src/components/Sidebar.tsx', type: 'file', ext: 'tsx' },
-          { name: 'TerminalPanel.tsx', path: 'src/components/TerminalPanel.tsx', type: 'file', ext: 'tsx' },
-        ],
-      },
-      {
-        name: 'services',
-        path: 'src/services',
-        type: 'folder',
-        children: [
-          { name: 'llm.ts', path: 'src/services/llm.ts', type: 'file', ext: 'ts' },
-          { name: 'mcp.ts', path: 'src/services/mcp.ts', type: 'file', ext: 'ts' },
-          { name: 'toolExecution.ts', path: 'src/services/toolExecution.ts', type: 'file', ext: 'ts' },
-          { name: 'slashCommands.ts', path: 'src/services/slashCommands.ts', type: 'file', ext: 'ts' },
-          { name: 'fileReference.ts', path: 'src/services/fileReference.ts', type: 'file', ext: 'ts' },
-        ],
-      },
-      {
-        name: 'store',
-        path: 'src/store',
-        type: 'folder',
-        children: [
-          { name: 'useAppStore.ts', path: 'src/store/useAppStore.ts', type: 'file', ext: 'ts' },
-        ],
-      },
-      {
-        name: 'core',
-        path: 'src/core',
-        type: 'folder',
-        children: [
-          { name: 'soul.ts', path: 'src/core/soul.ts', type: 'file', ext: 'ts' },
-        ],
-      },
-      { name: 'App.tsx', path: 'src/App.tsx', type: 'file', ext: 'tsx' },
-      { name: 'main.tsx', path: 'src/main.tsx', type: 'file', ext: 'tsx' },
-      { name: 'index.css', path: 'src/index.css', type: 'file', ext: 'css' },
-    ],
-  },
-  {
-    name: 'public',
-    path: 'public',
-    type: 'folder',
-    children: [
-      { name: 'vite.svg', path: 'public/vite.svg', type: 'file', ext: 'svg' },
-    ],
-  },
-  { name: 'package.json', path: 'package.json', type: 'file', ext: 'json' },
-  { name: 'tsconfig.json', path: 'tsconfig.json', type: 'file', ext: 'json' },
-  { name: 'vite.config.ts', path: 'vite.config.ts', type: 'file', ext: 'ts' },
-  { name: 'README.md', path: 'README.md', type: 'file', ext: 'md' },
-];
 
 interface FileTreeItemProps {
   node: FileNode;
@@ -203,10 +141,98 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
   );
 };
 
+function buildFileTree(files: { path: string; type: 'file' | 'directory' }[]): FileNode[] {
+  const root: Map<string, FileNode> = new Map();
+  const allPaths = new Set<string>();
+
+  files.forEach(file => {
+    const parts = file.path.split('/');
+    let currentPath = '';
+    
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const isLast = i === parts.length - 1;
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+      
+      if (!allPaths.has(currentPath)) {
+        allPaths.add(currentPath);
+        
+        const node: FileNode = {
+          name: part,
+          path: currentPath,
+          type: isLast && file.type === 'file' ? 'file' : 'folder',
+          ext: isLast && file.type === 'file' ? part.split('.').pop() : undefined,
+        };
+        
+        if (isLast && file.type === 'directory') {
+          node.children = [];
+        }
+        
+        root.set(currentPath, node);
+      }
+    }
+  });
+
+  const result: FileNode[] = [];
+  const childrenMap = new Map<string, FileNode[]>();
+
+  root.forEach((node, path) => {
+    const parentPath = path.split('/').slice(0, -1).join('/');
+    
+    if (parentPath) {
+      if (!childrenMap.has(parentPath)) {
+        childrenMap.set(parentPath, []);
+      }
+      childrenMap.get(parentPath)!.push(node);
+    } else if (!path.includes('/')) {
+      result.push(node);
+    }
+  });
+
+  const assignChildren = (nodes: FileNode[]) => {
+    nodes.forEach(node => {
+      const children = childrenMap.get(node.path);
+      if (children) {
+        node.children = children;
+        assignChildren(children);
+      }
+    });
+  };
+
+  assignChildren(result);
+
+  return result.sort((a, b) => {
+    if (a.type !== b.type) {
+      return a.type === 'folder' ? -1 : 1;
+    }
+    return a.name.localeCompare(b.name);
+  });
+}
+
 export const FileExplorer: React.FC = () => {
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['src']));
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
   const { openFile } = useAppStore();
+
+  const workspace = realFileService.getWorkspace();
+
+  useEffect(() => {
+    const handleFileChange = () => {
+      setRefreshKey(k => k + 1);
+    };
+    
+    realFileService.addListener(handleFileChange);
+    return () => realFileService.removeListener(handleFileChange);
+  }, []);
+
+  const fileNodes = useMemo(() => {
+    void refreshKey;
+    if (!workspace) return [];
+    
+    const fileTree = realFileService.getFileTree();
+    return buildFileTree(fileTree);
+  }, [workspace, refreshKey]);
 
   const toggleFolder = (path: string) => {
     setExpandedFolders((prev) => {
@@ -221,11 +247,35 @@ export const FileExplorer: React.FC = () => {
   };
 
   const handleFileClick = (path: string) => {
-    openFile(path);
+    const content = realFileService.readFile(path);
+    if (content !== null) {
+      openFile(path);
+    }
+  };
+
+  const handleCreateFile = () => {
+    const fileName = prompt('请输入文件名:', 'new-file.ts');
+    if (fileName) {
+      realFileService.writeFile(fileName, '// 新文件\n');
+      setRefreshKey(k => k + 1);
+    }
+  };
+
+  const handleCreateFolder = () => {
+    const folderName = prompt('请输入文件夹名:', 'new-folder');
+    if (folderName) {
+      realFileService.createDirectory(folderName);
+      setRefreshKey(k => k + 1);
+    }
+  };
+
+  const handleRefresh = async () => {
+    await realFileService.refreshFromDirectory();
+    setRefreshKey(k => k + 1);
   };
 
   const filteredFiles = useMemo(() => {
-    if (!searchTerm) return DEFAULT_PROJECT_FILES;
+    if (!searchTerm) return fileNodes;
     
     const filterNodes = (nodes: FileNode[]): FileNode[] => {
       return nodes.reduce<FileNode[]>((acc, node) => {
@@ -241,17 +291,47 @@ export const FileExplorer: React.FC = () => {
       }, []);
     };
     
-    return filterNodes(DEFAULT_PROJECT_FILES);
-  }, [searchTerm]);
+    return filterNodes(fileNodes);
+  }, [searchTerm, fileNodes]);
+
+  if (!workspace) {
+    return (
+      <div className="h-full flex flex-col bg-lcs-surface items-center justify-center p-4">
+        <Folder className="w-12 h-12 text-lcs-muted mb-4" />
+        <p className="text-sm text-lcs-muted text-center">
+          没有打开的工作区
+          <br />
+          <br />
+          请在聊天面板中创建或打开项目
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col bg-lcs-surface">
       <div className="p-2 border-b border-lcs-border">
         <div className="flex items-center gap-2 mb-2">
-          <span className="text-xs font-medium text-lcs-text">文件浏览器</span>
+          <span className="text-xs font-medium text-lcs-text truncate flex-1" title={workspace.name}>
+            📁 {workspace.name}
+          </span>
           <button
-            onClick={() => setExpandedFolders(new Set(['src']))}
-            className="p-1 hover:bg-lcs-primary/20 rounded text-lcs-muted hover:text-lcs-text transition-colors ml-auto"
+            onClick={handleCreateFile}
+            className="p-1 hover:bg-lcs-primary/20 rounded text-lcs-muted hover:text-lcs-text transition-colors"
+            title="新建文件"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+          <button
+            onClick={handleCreateFolder}
+            className="p-1 hover:bg-lcs-primary/20 rounded text-lcs-muted hover:text-lcs-text transition-colors"
+            title="新建文件夹"
+          >
+            <FolderPlus className="w-3 h-3" />
+          </button>
+          <button
+            onClick={handleRefresh}
+            className="p-1 hover:bg-lcs-primary/20 rounded text-lcs-muted hover:text-lcs-text transition-colors"
             title="刷新"
           >
             <RefreshCw className="w-3 h-3" />
@@ -270,21 +350,29 @@ export const FileExplorer: React.FC = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto py-1">
-        {filteredFiles.map((node) => (
-          <FileTreeItem
-            key={node.path}
-            node={node}
-            depth={0}
-            expandedFolders={expandedFolders}
-            toggleFolder={toggleFolder}
-            onFileClick={handleFileClick}
-            searchTerm={searchTerm}
-          />
-        ))}
+        {filteredFiles.length > 0 ? (
+          filteredFiles.map((node) => (
+            <FileTreeItem
+              key={node.path}
+              node={node}
+              depth={0}
+              expandedFolders={expandedFolders}
+              toggleFolder={toggleFolder}
+              onFileClick={handleFileClick}
+              searchTerm={searchTerm}
+            />
+          ))
+        ) : (
+          <div className="text-center py-8 text-lcs-muted text-sm">
+            <File className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            <p>工作区为空</p>
+            <p className="text-xs mt-1">点击 + 创建新文件</p>
+          </div>
+        )}
       </div>
 
       <div className="p-2 border-t border-lcs-border text-xs text-lcs-muted">
-        点击文件在编辑器中打开
+        {realFileService.listFiles().length} 个文件
       </div>
     </div>
   );

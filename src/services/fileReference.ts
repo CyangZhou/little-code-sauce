@@ -153,7 +153,7 @@ export function createReferenceContext(
       contextParts.push(`\n### ${ref.path}`);
       contextParts.push(`\`\`\`${ref.language || 'plaintext'}`);
       contextParts.push(content);
-      contextParts.push('`\`\`');
+      contextParts.push('```');
     } else {
       contextParts.push(`\n### ${ref.path} (文件未找到)`);
     }

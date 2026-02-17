@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Terminal as TerminalIcon, X, Trash2 } from 'lucide-react';
+import { Terminal as TerminalIcon, X, Trash2, AlertCircle } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { realFileService } from '../services/realFileService';
 
 export const TerminalPanel: React.FC = () => {
   const [input, setInput] = useState('');
@@ -34,30 +35,172 @@ export const TerminalPanel: React.FC = () => {
     const timestamp = new Date().toLocaleTimeString();
     
     let output = '';
-    const command = cmd.trim().toLowerCase();
     const args = cmd.trim().split(' ').slice(1).join(' ');
+    const parts = cmd.trim().split(' ');
+    const cmdName = parts[0].toLowerCase();
 
-    if (command.startsWith('ls') || command.startsWith('dir')) {
-      output = `node_modules/  src/  public/  dist/  package.json  tsconfig.json  vite.config.ts`;
-    } else if (command.startsWith('cat ')) {
-      output = `[文件内容预览]\n// ${args} 的内容将在编辑器中显示`;
-    } else if (command.startsWith('npm ')) {
-      output = `> npm ${args}\n\n✓ 命令已加入队列\n提示: 实际执行需要后端支持`;
-    } else if (command.startsWith('git ')) {
-      output = `> git ${args}\n\n✓ Git 命令模拟执行\n提示: 实际执行需要后端支持`;
-    } else if (command === 'clear' || command === 'cls') {
-      setTerminalOutput('');
-      return;
-    } else if (command === 'help') {
-      output = `可用命令:
-  ls, dir      - 列出文件
-  cat <file>   - 查看文件
-  npm <cmd>    - NPM 命令
-  git <cmd>    - Git 命令
-  clear, cls   - 清空终端
-  help         - 显示帮助`;
-    } else {
-      output = `命令未识别: ${cmd}\n输入 'help' 查看可用命令`;
+    const workspace = realFileService.getWorkspace();
+
+    switch (cmdName) {
+      case 'ls':
+      case 'dir':
+        if (!workspace) {
+          output = '❌ 没有打开的工作区';
+        } else {
+          const files = realFileService.listFiles();
+          if (files.length === 0) {
+            output = '(空目录)';
+          } else {
+            output = files.map(f => {
+              const lines = f.content.split('\n').length;
+              return `📄 ${f.path} (${lines} 行)`;
+            }).join('\n');
+          }
+        }
+        break;
+
+      case 'cat':
+        if (!args) {
+          output = '用法: cat <文件名>';
+        } else if (!workspace) {
+          output = '❌ 没有打开的工作区';
+        } else {
+          const content = realFileService.readFile(args);
+          if (content === null) {
+            output = `❌ 文件不存在: ${args}`;
+          } else {
+            output = content;
+          }
+        }
+        break;
+
+      case 'touch':
+      case 'new':
+        if (!args) {
+          output = '用法: touch <文件名>';
+        } else if (!workspace) {
+          realFileService.createWorkspace('新项目');
+          realFileService.writeFile(args, '');
+          output = `✅ 文件已创建: ${args}`;
+        } else {
+          realFileService.writeFile(args, '');
+          output = `✅ 文件已创建: ${args}`;
+        }
+        break;
+
+      case 'rm':
+      case 'del':
+        if (!args) {
+          output = '用法: rm <文件名>';
+        } else if (!workspace) {
+          output = '❌ 没有打开的工作区';
+        } else {
+          const success = realFileService.deleteFile(args);
+          if (success) {
+            output = `✅ 文件已删除: ${args}`;
+          } else {
+            output = `❌ 文件不存在: ${args}`;
+          }
+        }
+        break;
+
+      case 'grep':
+      case 'search':
+        if (!args) {
+          output = '用法: grep <搜索词>';
+        } else if (!workspace) {
+          output = '❌ 没有打开的工作区';
+        } else {
+          const results = realFileService.searchInFiles(args);
+          if (results.length === 0) {
+            output = `未找到匹配: ${args}`;
+          } else {
+            output = results.slice(0, 20).map(r => 
+              `${r.path}:${r.line} - ${r.content.slice(0, 60)}`
+            ).join('\n');
+            if (results.length > 20) {
+              output += `\n... 还有 ${results.length - 20} 个结果`;
+            }
+          }
+        }
+        break;
+
+      case 'pwd':
+        if (!workspace) {
+          output = '❌ 没有打开的工作区';
+        } else {
+          output = `📁 ${workspace.name} (${workspace.files.size} 个文件)`;
+        }
+        break;
+
+      case 'help':
+        output = `可用命令:
+  ls, dir       - 列出当前工作区文件
+  cat <file>    - 查看文件内容
+  touch <file>  - 创建新文件
+  rm <file>     - 删除文件
+  grep <term>   - 搜索文件内容
+  pwd           - 显示当前工作区信息
+  node <code>   - 执行 JavaScript 代码 (浏览器环境)
+  clear, cls    - 清空终端
+  help          - 显示此帮助
+
+注意: 
+- 文件操作仅在当前浏览器工作区生效
+- 系统命令 (npm, git, python) 需要本地环境支持，暂不可用`;
+        break;
+
+      case 'clear':
+      case 'cls':
+        setTerminalOutput('');
+        return;
+
+      case 'npm':
+      case 'yarn':
+      case 'pnpm':
+        output = `⚠️ 浏览器环境限制
+
+无法直接执行 ${cmdName} 命令。
+
+替代方案:
+- 使用小码酱的自动执行功能
+- 在本地终端执行命令
+- 使用 /terminal 命令查看更多`;
+        break;
+
+      case 'git':
+        output = `⚠️ 浏览器环境限制
+
+无法直接执行 git 命令。
+
+替代方案:
+- 使用小码酱的自动执行功能
+- 在本地终端执行 git 命令`;
+        break;
+
+      case 'node':
+        if (args) {
+          try {
+            const code = args;
+            let result: unknown;
+            try {
+              const fn = new Function(`"use strict"; return (${code});`);
+              result = fn();
+            } catch {
+              const fn = new Function(`"use strict"; ${code}`);
+              result = fn();
+            }
+            output = `> ${code}\n${JSON.stringify(result, null, 2)}`;
+          } catch (e) {
+            output = `❌ 执行错误: ${e instanceof Error ? e.message : String(e)}`;
+          }
+        } else {
+          output = '用法: node <代码>';
+        }
+        break;
+
+      default:
+        output = `❌ 未知命令: ${cmdName}\n输入 'help' 查看可用命令`;
     }
 
     const newOutput = `[${timestamp}] $ ${cmd}\n${output}\n\n`;
@@ -99,6 +242,11 @@ export const TerminalPanel: React.FC = () => {
         <div className="flex items-center gap-2">
           <TerminalIcon className="w-4 h-4 text-lcs-primary" />
           <span className="text-xs text-lcs-muted">终端</span>
+          {realFileService.hasWorkspace() && (
+            <span className="text-xs text-lcs-secondary">
+              📁 {realFileService.getWorkspace()?.name}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -124,8 +272,14 @@ export const TerminalPanel: React.FC = () => {
         onClick={() => inputRef.current?.focus()}
       >
         <div className="text-lcs-muted text-xs mb-2">
-          小码酱终端 v0.1.0 - 输入 'help' 查看可用命令
+          小码酱终端 v1.0 - 输入 'help' 查看可用命令
         </div>
+        {!realFileService.hasWorkspace() && (
+          <div className="flex items-center gap-2 text-yellow-400 text-xs mb-2">
+            <AlertCircle className="w-3 h-3" />
+            <span>没有打开的工作区 - 文件操作命令将不可用</span>
+          </div>
+        )}
         <pre className="text-lcs-text whitespace-pre-wrap">{terminal.output}</pre>
       </div>
 

@@ -1,461 +1,489 @@
-export interface CodeAnalysisResult {
-  file: string;
-  language: string;
-  metrics: CodeMetrics;
-  issues: CodeIssue[];
-  suggestions: CodeSuggestion[];
-  dependencies: string[];
-}
+import { realFileService } from './realFileService';
 
-export interface CodeMetrics {
-  linesOfCode: number;
-  linesOfComments: number;
-  blankLines: number;
-  functions: number;
-  classes: number;
-  complexity: number;
-  maintainabilityIndex: number;
+export interface CodeSymbol {
+  name: string;
+  type: 'function' | 'class' | 'interface' | 'variable' | 'import' | 'export' | 'const';
+  line: number;
+  endLine?: number;
+  signature?: string;
+  documentation?: string;
 }
 
 export interface CodeIssue {
-  type: 'error' | 'warning' | 'info' | 'hint';
+  type: 'error' | 'warning' | 'info';
   message: string;
   line: number;
-  column: number;
+  column?: number;
   endLine?: number;
   endColumn?: number;
   rule?: string;
-  fix?: string;
 }
 
-export interface CodeSuggestion {
-  type: 'refactor' | 'optimize' | 'security' | 'style' | 'performance';
-  message: string;
-  line: number;
-  suggestion: string;
-  impact: 'high' | 'medium' | 'low';
-}
-
-export interface ProjectAnalysis {
-  totalFiles: number;
-  totalLines: number;
-  languages: Record<string, number>;
-  dependencies: {
-    production: string[];
-    development: string[];
-    outdated: string[];
-    vulnerable: string[];
+export interface CodeAnalysisResult {
+  language: string;
+  symbols: CodeSymbol[];
+  issues: CodeIssue[];
+  complexity: {
+    cyclomatic: number;
+    cognitive: number;
+    linesOfCode: number;
   };
-  structure: FileTreeNode;
-  metrics: {
-    averageComplexity: number;
-    averageMaintainability: number;
-    technicalDebt: number;
+  imports: string[];
+  exports: string[];
+  dependencies: string[];
+}
+
+const LANGUAGE_PATTERNS: Record<string, {
+  function: RegExp[];
+  class: RegExp[];
+  interface: RegExp[];
+  variable: RegExp[];
+  import: RegExp[];
+  export: RegExp[];
+  comment: RegExp[];
+}> = {
+  typescript: {
+    function: [
+      /^(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(/gm,
+      /^(?:export\s+)?(?:async\s+)?(\w+)\s*(?:<[^>]+>)?\s*\([^)]*\)\s*(?::\s*[^{]+)?\s*\{/gm,
+      /^(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[^=])\s*=>/gm,
+    ],
+    class: [
+      /^(?:export\s+)?class\s+(\w+)(?:\s+extends\s+\w+)?(?:\s+implements\s+[\w,\s]+)?\s*\{/gm,
+    ],
+    interface: [
+      /^(?:export\s+)?interface\s+(\w+)(?:\s+extends\s+[\w,\s]+)?\s*\{/gm,
+    ],
+    variable: [
+      /^(?:export\s+)?(?:const|let|var)\s+(\w+)\s*(?::\s*[^=;]+)?\s*=/gm,
+    ],
+    import: [
+      /^import\s+(?:\{[^}]+\}|\*\s+as\s+\w+|\w+)\s+from\s+['"]([^'"]+)['"]/gm,
+      /^import\s+['"]([^'"]+)['"]/gm,
+    ],
+    export: [
+      /^export\s+(?:default\s+)?(?:function|class|interface|const|let|var)\s+(\w+)/gm,
+      /^export\s+\{([^}]+)\}/gm,
+    ],
+    comment: [
+      /\/\/.*$/gm,
+      /\/\*[\s\S]*?\*\//gm,
+    ],
+  },
+  javascript: {
+    function: [
+      /^(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(/gm,
+      /^(?:export\s+)?(?:async\s+)?(\w+)\s*\([^)]*\)\s*\{/gm,
+      /^(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[^=])\s*=>/gm,
+    ],
+    class: [
+      /^(?:export\s+)?class\s+(\w+)(?:\s+extends\s+\w+)?\s*\{/gm,
+    ],
+    interface: [],
+    variable: [
+      /^(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=/gm,
+    ],
+    import: [
+      /^import\s+(?:\{[^}]+\}|\*\s+as\s+\w+|\w+)\s+from\s+['"]([^'"]+)['"]/gm,
+      /^import\s+['"]([^'"]+)['"]/gm,
+    ],
+    export: [
+      /^export\s+(?:default\s+)?(?:function|class|const|let|var)\s+(\w+)/gm,
+      /^export\s+\{([^}]+)\}/gm,
+    ],
+    comment: [
+      /\/\/.*$/gm,
+      /\/\*[\s\S]*?\*\//gm,
+    ],
+  },
+  python: {
+    function: [
+      /^(?:async\s+)?def\s+(\w+)\s*\(/gm,
+    ],
+    class: [
+      /^class\s+(\w+)(?:\([^)]*\))?\s*:/gm,
+    ],
+    interface: [],
+    variable: [
+      /^(\w+)\s*=\s*(?!==)/gm,
+    ],
+    import: [
+      /^import\s+([\w.]+)/gm,
+      /^from\s+([\w.]+)\s+import/gm,
+    ],
+    export: [],
+    comment: [
+      /#.*$/gm,
+      /"""[\s\S]*?"""/gm,
+      /'''[\s\S]*?'''/gm,
+    ],
+  },
+};
+
+function detectLanguage(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  const langMap: Record<string, string> = {
+    ts: 'typescript',
+    tsx: 'typescript',
+    js: 'javascript',
+    jsx: 'javascript',
+    py: 'python',
   };
+  return langMap[ext || ''] || 'javascript';
 }
 
-export interface FileTreeNode {
-  name: string;
-  type: 'file' | 'folder';
-  path: string;
-  children?: FileTreeNode[];
-  size?: number;
-  language?: string;
+function stripComments(code: string, patterns: RegExp[]): string {
+  let result = code;
+  for (const pattern of patterns) {
+    result = result.replace(pattern, '');
+  }
+  return result;
 }
 
-export interface ImportInfo {
-  source: string;
-  specifiers: string[];
-  line: number;
-  isDefault: boolean;
-  isNamespace: boolean;
+function countLines(code: string): number {
+  return code.split('\n').filter(line => line.trim().length > 0).length;
 }
 
-export interface ExportInfo {
-  name: string;
-  type: 'value' | 'function' | 'class' | 'type' | 'interface';
-  line: number;
-  isDefault: boolean;
+function calculateCyclomaticComplexity(code: string): number {
+  const controlFlowPatterns = [
+    /\bif\b/g,
+    /\belse\s+if\b/g,
+    /\bfor\b/g,
+    /\bwhile\b/g,
+    /\bswitch\b/g,
+    /\bcase\b/g,
+    /\bcatch\b/g,
+    /\?\s*:/g,
+    /&&/g,
+    /\|\|/g,
+  ];
+  
+  let complexity = 1;
+  for (const pattern of controlFlowPatterns) {
+    const matches = code.match(pattern);
+    if (matches) {
+      complexity += matches.length;
+    }
+  }
+  return complexity;
+}
+
+function calculateCognitiveComplexity(code: string): number {
+  const lines = code.split('\n');
+  let complexity = 0;
+  let nestingLevel = 0;
+  
+  const nestingPatterns = [
+    { pattern: /\bif\b/, increment: 1 },
+    { pattern: /\bfor\b/, increment: 1 },
+    { pattern: /\bwhile\b/, increment: 1 },
+    { pattern: /\bswitch\b/, increment: 1 },
+    { pattern: /\bcatch\b/, increment: 1 },
+    { pattern: /\bfunction\b/, increment: 1 },
+    { pattern: /\b=>\s*\{/, increment: 1 },
+  ];
+  
+  const closingPatterns = [
+    /^\s*\}/,
+  ];
+  
+  for (const line of lines) {
+    for (const { pattern, increment } of nestingPatterns) {
+      if (pattern.test(line)) {
+        complexity += (nestingLevel + 1) * increment;
+        nestingLevel += increment;
+      }
+    }
+    
+    for (const pattern of closingPatterns) {
+      if (pattern.test(line)) {
+        nestingLevel = Math.max(0, nestingLevel - 1);
+      }
+    }
+  }
+  
+  return complexity;
+}
+
+function findSymbols(code: string, language: string): CodeSymbol[] {
+  const symbols: CodeSymbol[] = [];
+  const patterns = LANGUAGE_PATTERNS[language] || LANGUAGE_PATTERNS.javascript;
+  const lines = code.split('\n');
+  
+  const findMatches = (regexList: RegExp[], type: CodeSymbol['type']) => {
+    for (const pattern of regexList) {
+      let match;
+      const globalPattern = new RegExp(pattern.source, pattern.flags);
+      while ((match = globalPattern.exec(code)) !== null) {
+        const lineNumber = code.substring(0, match.index).split('\n').length;
+        const lineContent = lines[lineNumber - 1]?.trim() || '';
+        
+        symbols.push({
+          name: match[1] || 'anonymous',
+          type,
+          line: lineNumber,
+          signature: lineContent.slice(0, 100),
+        });
+      }
+    }
+  };
+  
+  findMatches(patterns.function, 'function');
+  findMatches(patterns.class, 'class');
+  findMatches(patterns.interface, 'interface');
+  findMatches(patterns.variable, 'variable');
+  
+  return symbols.sort((a, b) => a.line - b.line);
+}
+
+function findIssues(code: string, language: string): CodeIssue[] {
+  const issues: CodeIssue[] = [];
+  const lines = code.split('\n');
+  
+  lines.forEach((line, index) => {
+    const lineNum = index + 1;
+    
+    if (line.includes('console.log')) {
+      issues.push({
+        type: 'warning',
+        message: '避免在生产代码中使用 console.log',
+        line: lineNum,
+        rule: 'no-console',
+      });
+    }
+    
+    if (line.includes('any') && language === 'typescript') {
+      issues.push({
+        type: 'warning',
+        message: '避免使用 any 类型',
+        line: lineNum,
+        rule: 'no-explicit-any',
+      });
+    }
+    
+    if (line.includes('TODO') || line.includes('FIXME')) {
+      issues.push({
+        type: 'info',
+        message: '发现待办事项',
+        line: lineNum,
+        rule: 'todo-comment',
+      });
+    }
+    
+    if (line.includes('var ') && (language === 'typescript' || language === 'javascript')) {
+      issues.push({
+        type: 'warning',
+        message: '建议使用 const 或 let 替代 var',
+        line: lineNum,
+        rule: 'no-var',
+      });
+    }
+    
+    if (line.includes('==') && !line.includes('===')) {
+      issues.push({
+        type: 'warning',
+        message: '建议使用严格相等 ===',
+        line: lineNum,
+        rule: 'eqeqeq',
+      });
+    }
+    
+    if (line.trim().length > 120) {
+      issues.push({
+        type: 'info',
+        message: '行长度超过120字符',
+        line: lineNum,
+        rule: 'max-line-length',
+      });
+    }
+  });
+  
+  return issues;
+}
+
+function findImports(code: string, language: string): string[] {
+  const imports: string[] = [];
+  const patterns = LANGUAGE_PATTERNS[language] || LANGUAGE_PATTERNS.javascript;
+  
+  for (const pattern of patterns.import) {
+    let match;
+    const globalPattern = new RegExp(pattern.source, pattern.flags);
+    while ((match = globalPattern.exec(code)) !== null) {
+      if (match[1]) {
+        imports.push(match[1]);
+      }
+    }
+  }
+  
+  return [...new Set(imports)];
+}
+
+function findExports(code: string, language: string): string[] {
+  const exports: string[] = [];
+  const patterns = LANGUAGE_PATTERNS[language] || LANGUAGE_PATTERNS.javascript;
+  
+  for (const pattern of patterns.export) {
+    let match;
+    const globalPattern = new RegExp(pattern.source, pattern.flags);
+    while ((match = globalPattern.exec(code)) !== null) {
+      if (match[1]) {
+        if (match[1].includes(',')) {
+          exports.push(...match[1].split(',').map(s => s.trim()));
+        } else {
+          exports.push(match[1]);
+        }
+      }
+    }
+  }
+  
+  return [...new Set(exports)];
 }
 
 class CodeAnalysisService {
-  private cache: Map<string, CodeAnalysisResult> = new Map();
+  analyzeFile(path: string): CodeAnalysisResult | null {
+    const content = realFileService.readFile(path);
+    if (content === null) {
+      return null;
+    }
+    
+    return this.analyzeCode(content, path);
+  }
 
-  async analyzeFile(content: string, filePath: string): Promise<CodeAnalysisResult> {
-    const cached = this.cache.get(filePath);
-    if (cached) return cached;
-
-    const language = this.detectLanguage(filePath);
-    const metrics = this.calculateMetrics(content, language);
-    const issues = this.detectIssues(content, language);
-    const suggestions = this.generateSuggestions(content, language);
-    const dependencies = this.extractDependencies(content, language);
-
-    const result: CodeAnalysisResult = {
-      file: filePath,
+  analyzeCode(code: string, filename: string): CodeAnalysisResult {
+    const language = detectLanguage(filename);
+    const patterns = LANGUAGE_PATTERNS[language] || LANGUAGE_PATTERNS.javascript;
+    
+    const codeWithoutComments = stripComments(code, patterns.comment);
+    
+    return {
       language,
-      metrics,
-      issues,
-      suggestions,
-      dependencies,
-    };
-
-    this.cache.set(filePath, result);
-    return result;
-  }
-
-  private detectLanguage(filePath: string): string {
-    const ext = filePath.split('.').pop()?.toLowerCase();
-    const languageMap: Record<string, string> = {
-      ts: 'typescript',
-      tsx: 'typescript',
-      js: 'javascript',
-      jsx: 'javascript',
-      py: 'python',
-      rs: 'rust',
-      go: 'go',
-      java: 'java',
-      cpp: 'cpp',
-      c: 'c',
-      cs: 'csharp',
-      rb: 'ruby',
-      php: 'php',
-      swift: 'swift',
-      kt: 'kotlin',
-    };
-    return languageMap[ext || ''] || 'plaintext';
-  }
-
-  private calculateMetrics(content: string, _language: string): CodeMetrics {
-    const lines = content.split('\n');
-    let linesOfCode = 0;
-    let linesOfComments = 0;
-    let blankLines = 0;
-
-    let inBlockComment = false;
-    for (const line of lines) {
-      const trimmed = line.trim();
-      
-      if (inBlockComment) {
-        linesOfComments++;
-        if (trimmed.includes('*/')) {
-          inBlockComment = false;
-        }
-        continue;
-      }
-
-      if (trimmed === '') {
-        blankLines++;
-      } else if (trimmed.startsWith('//') || trimmed.startsWith('#') || trimmed.startsWith('--')) {
-        linesOfComments++;
-      } else if (trimmed.startsWith('/*') || trimmed.startsWith('"""') || trimmed.startsWith("'''")) {
-        linesOfComments++;
-        if (!trimmed.includes('*/') && !trimmed.endsWith('"""') && !trimmed.endsWith("'''")) {
-          inBlockComment = true;
-        }
-      } else {
-        linesOfCode++;
-      }
-    }
-
-    const functionMatches = content.match(/function\s+\w+|const\s+\w+\s*=\s*(?:async\s*)?\(|def\s+\w+|fn\s+\w+/g) || [];
-    const classMatches = content.match(/class\s+\w+|struct\s+\w+/g) || [];
-
-    const complexity = this.calculateComplexity(content);
-
-    return {
-      linesOfCode,
-      linesOfComments,
-      blankLines,
-      functions: functionMatches.length,
-      classes: classMatches.length,
-      complexity,
-      maintainabilityIndex: Math.max(0, 100 - complexity * 2),
+      symbols: findSymbols(codeWithoutComments, language),
+      issues: findIssues(code, language),
+      complexity: {
+        cyclomatic: calculateCyclomaticComplexity(codeWithoutComments),
+        cognitive: calculateCognitiveComplexity(codeWithoutComments),
+        linesOfCode: countLines(code),
+      },
+      imports: findImports(code, language),
+      exports: findExports(code, language),
+      dependencies: findImports(code, language),
     };
   }
 
-  private calculateComplexity(content: string): number {
-    const controlFlowPatterns = [
-      /\bif\s*\(/g,
-      /\belse\s+if\s*\(/g,
-      /\bfor\s*\(/g,
-      /\bwhile\s*\(/g,
-      /\bswitch\s*\(/g,
-      /\bcase\s+/g,
-      /\bcatch\s*\(/g,
-      /\?\s*:/g,
-      /&&/g,
-      /\|\|/g,
-    ];
-
-    let complexity = 1;
-    for (const pattern of controlFlowPatterns) {
-      const matches = content.match(pattern);
-      if (matches) {
-        complexity += matches.length;
-      }
+  analyzeWorkspace(): Map<string, CodeAnalysisResult> {
+    const results = new Map<string, CodeAnalysisResult>();
+    
+    if (!realFileService.hasWorkspace()) {
+      return results;
     }
-
-    return complexity;
-  }
-
-  private detectIssues(content: string, language: string): CodeIssue[] {
-    const issues: CodeIssue[] = [];
-    const lines = content.split('\n');
-
-    lines.forEach((line, index) => {
-      const lineNum = index + 1;
-
-      if (language === 'typescript' || language === 'javascript') {
-        if (line.includes('console.log')) {
-          issues.push({
-            type: 'warning',
-            message: '避免在生产代码中使用 console.log',
-            line: lineNum,
-            column: line.indexOf('console.log') + 1,
-            rule: 'no-console',
-            fix: '// 移除或使用日志库',
-          });
-        }
-
-        if (line.includes('var ')) {
-          issues.push({
-            type: 'warning',
-            message: '使用 let 或 const 替代 var',
-            line: lineNum,
-            column: line.indexOf('var ') + 1,
-            rule: 'no-var',
-            fix: line.replace('var ', 'const '),
-          });
-        }
-
-        if (line.includes('== ') && !line.includes('=== ')) {
-          issues.push({
-            type: 'warning',
-            message: '使用 === 替代 ==',
-            line: lineNum,
-            column: line.indexOf('== ') + 1,
-            rule: 'eqeqeq',
-          });
-        }
-      }
-
-      if (line.length > 120) {
-        issues.push({
-          type: 'info',
-          message: '行长度超过120字符',
-          line: lineNum,
-          column: 121,
-          rule: 'max-len',
-        });
-      }
-
-      if (line.includes('TODO') || line.includes('FIXME') || line.includes('HACK')) {
-        issues.push({
-          type: 'info',
-          message: `发现待办事项: ${line.trim()}`,
-          line: lineNum,
-          column: 1,
-          rule: 'todo-comment',
-        });
-      }
-    });
-
-    return issues;
-  }
-
-  private generateSuggestions(content: string, language: string): CodeSuggestion[] {
-    const suggestions: CodeSuggestion[] = [];
-    const lines = content.split('\n');
-
-    lines.forEach((line, index) => {
-      const lineNum = index + 1;
-
-      if (language === 'typescript' || language === 'javascript') {
-        if (line.includes('.map(') && line.includes('.filter(')) {
-          suggestions.push({
-            type: 'optimize',
-            message: '考虑合并 map 和 filter 操作以减少迭代次数',
-            line: lineNum,
-            suggestion: '使用 flatMap 或单次 reduce 操作',
-            impact: 'medium',
-          });
-        }
-
-        if (line.includes('any')) {
-          suggestions.push({
-            type: 'refactor',
-            message: '避免使用 any 类型',
-            line: lineNum,
-            suggestion: '定义具体的类型接口',
-            impact: 'high',
-          });
-        }
-
-        if (line.includes('eval(')) {
-          suggestions.push({
-            type: 'security',
-            message: 'eval() 存在安全风险',
-            line: lineNum,
-            suggestion: '使用 JSON.parse 或其他安全替代方案',
-            impact: 'high',
-          });
-        }
-      }
-
-      if (line.includes('password') || line.includes('secret') || line.includes('api_key')) {
-        suggestions.push({
-          type: 'security',
-          message: '可能包含敏感信息',
-          line: lineNum,
-          suggestion: '使用环境变量存储敏感信息',
-          impact: 'high',
-        });
-      }
-    });
-
-    return suggestions;
-  }
-
-  private extractDependencies(content: string, language: string): string[] {
-    const dependencies: string[] = [];
-
-    if (language === 'typescript' || language === 'javascript') {
-      const importRegex = /import\s+.*?from\s+['"]([^'"]+)['"]/g;
-      const requireRegex = /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
-
-      let match;
-      while ((match = importRegex.exec(content)) !== null) {
-        dependencies.push(match[1]);
-      }
-      while ((match = requireRegex.exec(content)) !== null) {
-        dependencies.push(match[1]);
-      }
-    }
-
-    if (language === 'python') {
-      const importRegex = /(?:import|from)\s+(\w+)/g;
-      let match;
-      while ((match = importRegex.exec(content)) !== null) {
-        dependencies.push(match[1]);
-      }
-    }
-
-    return [...new Set(dependencies)];
-  }
-
-  async analyzeProject(files: Array<{ path: string; content: string }>): Promise<ProjectAnalysis> {
-    let totalLines = 0;
-    const languages: Record<string, number> = {};
-    const allDependencies: Set<string> = new Set();
-    const complexities: number[] = [];
-    const maintainabilities: number[] = [];
-
+    
+    const files = realFileService.listFiles();
+    
     for (const file of files) {
-      const result = await this.analyzeFile(file.content, file.path);
-      totalLines += result.metrics.linesOfCode;
-      
-      languages[result.language] = (languages[result.language] || 0) + 1;
-      
-      result.dependencies.forEach(d => allDependencies.add(d));
-      complexities.push(result.metrics.complexity);
-      maintainabilities.push(result.metrics.maintainabilityIndex);
+      const ext = file.path.split('.').pop()?.toLowerCase();
+      if (['ts', 'tsx', 'js', 'jsx', 'py'].includes(ext || '')) {
+        const result = this.analyzeFile(file.path);
+        if (result) {
+          results.set(file.path, result);
+        }
+      }
     }
+    
+    return results;
+  }
 
-    const avgComplexity = complexities.length > 0
-      ? complexities.reduce((a, b) => a + b, 0) / complexities.length
-      : 0;
+  getSymbols(path: string): CodeSymbol[] {
+    const result = this.analyzeFile(path);
+    return result?.symbols || [];
+  }
 
-    const avgMaintainability = maintainabilities.length > 0
-      ? maintainabilities.reduce((a, b) => a + b, 0) / maintainabilities.length
-      : 0;
+  getIssues(path: string): CodeIssue[] {
+    const result = this.analyzeFile(path);
+    return result?.issues || [];
+  }
 
+  getComplexity(path: string): { cyclomatic: number; cognitive: number; linesOfCode: number } | null {
+    const result = this.analyzeFile(path);
+    return result?.complexity || null;
+  }
+
+  findDefinition(symbolName: string): { path: string; line: number } | null {
+    if (!realFileService.hasWorkspace()) {
+      return null;
+    }
+    
+    const files = realFileService.listFiles();
+    
+    for (const file of files) {
+      const symbols = this.getSymbols(file.path);
+      const found = symbols.find(s => s.name === symbolName);
+      if (found) {
+        return { path: file.path, line: found.line };
+      }
+    }
+    
+    return null;
+  }
+
+  findReferences(symbolName: string): { path: string; line: number; content: string }[] {
+    const results: { path: string; line: number; content: string }[] = [];
+    
+    if (!realFileService.hasWorkspace()) {
+      return results;
+    }
+    
+    const files = realFileService.listFiles();
+    
+    for (const file of files) {
+      const lines = file.content.split('\n');
+      lines.forEach((line, idx) => {
+        if (line.includes(symbolName)) {
+          results.push({
+            path: file.path,
+            line: idx + 1,
+            content: line.trim(),
+          });
+        }
+      });
+    }
+    
+    return results;
+  }
+
+  getDependencyGraph(): Map<string, string[]> {
+    const graph = new Map<string, string[]>();
+    const analysis = this.analyzeWorkspace();
+    
+    analysis.forEach((result, path) => {
+      graph.set(path, result.dependencies);
+    });
+    
+    return graph;
+  }
+
+  getSummary(): {
+    totalFiles: number;
+    totalSymbols: number;
+    totalIssues: number;
+    averageComplexity: number;
+  } {
+    const analysis = this.analyzeWorkspace();
+    let totalSymbols = 0;
+    let totalIssues = 0;
+    let totalComplexity = 0;
+    
+    analysis.forEach(result => {
+      totalSymbols += result.symbols.length;
+      totalIssues += result.issues.length;
+      totalComplexity += result.complexity.cyclomatic;
+    });
+    
     return {
-      totalFiles: files.length,
-      totalLines,
-      languages,
-      dependencies: {
-        production: Array.from(allDependencies).filter(d => !d.startsWith('.')),
-        development: [],
-        outdated: [],
-        vulnerable: [],
-      },
-      structure: {
-        name: 'root',
-        type: 'folder',
-        path: '.',
-        children: [],
-      },
-      metrics: {
-        averageComplexity: avgComplexity,
-        averageMaintainability: avgMaintainability,
-        technicalDebt: Math.floor(avgComplexity * 10),
-      },
+      totalFiles: analysis.size,
+      totalSymbols,
+      totalIssues,
+      averageComplexity: analysis.size > 0 ? totalComplexity / analysis.size : 0,
     };
-  }
-
-  extractImports(content: string, language: string): ImportInfo[] {
-    const imports: ImportInfo[] = [];
-
-    if (language === 'typescript' || language === 'javascript') {
-      const lines = content.split('\n');
-      lines.forEach((line, index) => {
-        const match = line.match(/import\s+(.*?)\s+from\s+['"]([^'"]+)['"]/);
-        if (match) {
-          const specifiers = match[1]
-            .replace(/[{}]/g, '')
-            .split(',')
-            .map(s => s.trim())
-            .filter(Boolean);
-          
-          imports.push({
-            source: match[2],
-            specifiers,
-            line: index + 1,
-            isDefault: !match[1].includes('{'),
-            isNamespace: match[1].includes('*'),
-          });
-        }
-      });
-    }
-
-    return imports;
-  }
-
-  extractExports(content: string, language: string): ExportInfo[] {
-    const exports: ExportInfo[] = [];
-
-    if (language === 'typescript' || language === 'javascript') {
-      const lines = content.split('\n');
-      lines.forEach((line, index) => {
-        const defaultMatch = line.match(/export\s+default\s+(\w+)/);
-        if (defaultMatch) {
-          exports.push({
-            name: defaultMatch[1],
-            type: 'value',
-            line: index + 1,
-            isDefault: true,
-          });
-        }
-
-        const namedMatch = line.match(/export\s+(?:const|let|var|function|class)\s+(\w+)/);
-        if (namedMatch) {
-          const keyword = line.match(/export\s+(const|let|var|function|class)/)?.[1];
-          exports.push({
-            name: namedMatch[1],
-            type: keyword === 'function' ? 'function' : keyword === 'class' ? 'class' : 'value',
-            line: index + 1,
-            isDefault: false,
-          });
-        }
-      });
-    }
-
-    return exports;
-  }
-
-  clearCache(): void {
-    this.cache.clear();
   }
 }
 

@@ -178,7 +178,8 @@ export const useAppStore = create<AppState>()(
       closeFile: (filename) => {
         set((state) => {
           const newOpenFiles = state.editor.openFiles.filter((f) => f !== filename);
-          const { [filename]: _, ...remainingContents } = state.editor.fileContents;
+          const { [filename]: removed, ...remainingContents } = state.editor.fileContents;
+          void removed;
           return {
             editor: {
               ...state.editor,

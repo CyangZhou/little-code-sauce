@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { X, Image as ImageIcon, Upload, AlertCircle } from 'lucide-react';
 import type { ImageAttachment } from '../services/imageSupport';
 import { 
@@ -53,7 +53,7 @@ export const ImageAttachments: React.FC<ImageAttachmentsProps> = ({
     }
   };
 
-  const handlePasteEvent = async (e: ClipboardEvent) => {
+  const handlePasteEvent = useCallback(async (e: ClipboardEvent) => {
     const newImages = await handlePaste(e);
     if (newImages.length > 0) {
       if (images.length + newImages.length > maxImages) {
@@ -62,7 +62,7 @@ export const ImageAttachments: React.FC<ImageAttachmentsProps> = ({
       }
       onAdd(newImages);
     }
-  };
+  }, [images.length, maxImages, onAdd]);
 
   React.useEffect(() => {
     const handler = new ImageDropHandler((imgs) => {
@@ -92,7 +92,7 @@ export const ImageAttachments: React.FC<ImageAttachmentsProps> = ({
     return () => {
       document.removeEventListener('paste', handlePasteEvent);
     };
-  }, [images.length, maxImages, onAdd]);
+  }, [handlePasteEvent, images.length, maxImages, onAdd]);
 
   React.useEffect(() => {
     if (error) {

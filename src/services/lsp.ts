@@ -141,11 +141,15 @@ export class LSPService {
     return null;
   }
 
-  async requestDefinition(_uri: string, _position: { line: number; character: number }): Promise<LSPDefinition[]> {
+  async requestDefinition(uri: string, position: { line: number; character: number }): Promise<LSPDefinition[]> {
+    void uri;
+    void position;
     return [];
   }
 
-  async requestReferences(_uri: string, _position: { line: number; character: number }): Promise<LSPDefinition[]> {
+  async requestReferences(uri: string, position: { line: number; character: number }): Promise<LSPDefinition[]> {
+    void uri;
+    void position;
     return [];
   }
 

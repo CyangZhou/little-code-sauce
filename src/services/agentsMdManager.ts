@@ -77,7 +77,7 @@ const DEFAULT_AGENTS_MD = `# AGENTS.md
 export class AgentsMdManager {
   private config: AgentsMdConfig | null = null;
 
-  async load(_projectRoot: string): Promise<AgentsMdConfig | null> {
+  async load(): Promise<AgentsMdConfig | null> {
     
     try {
       const stored = localStorage.getItem('lcs-agents-md');

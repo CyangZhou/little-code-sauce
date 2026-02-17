@@ -131,7 +131,8 @@ class GitService {
     return commits;
   }
 
-  async getDiff(filePath?: string, _staged?: boolean): Promise<GitDiff[]> {
+  async getDiff(filePath?: string, staged?: boolean): Promise<GitDiff[]> {
+    void staged;
     const file = filePath || 'src/App.tsx';
     return [
       {
@@ -225,13 +226,14 @@ class GitService {
     console.log('Cherry-picking:', commitHash);
   }
 
-  async blame(_filePath: string): Promise<Array<{
+  async blame(filePath: string): Promise<Array<{
     line: number;
     content: string;
     commit: string;
     author: string;
     date: Date;
   }>> {
+    void filePath;
     return [
       { line: 1, content: 'import React from "react";', commit: 'abc123', author: '开发者', date: new Date() },
       { line: 2, content: '', commit: 'abc123', author: '开发者', date: new Date() },
